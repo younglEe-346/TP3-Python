@@ -9,4 +9,7 @@ class CoupInvalideError(ErreurDames):
     """Un coup refusé : on garde la case de départ, la case d'arrivée et la raison."""
 
     def __init__(self, depart, arrivee, raison: str):
-        raise NotImplementedError("à compléter")
+        self.depart = depart
+        self.arrivee = arrivee
+        self.raison = raison
+        super().__init__(f"coup {depart}-{arrivee} refusé : {raison}")

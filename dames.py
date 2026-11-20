@@ -28,24 +28,34 @@ class Case:
 
     def __post_init__(self):
         """Refuse une colonne hors de a..j ou une ligne hors de 1..10 (ValueError)."""
-        raise NotImplementedError("à compléter")
+        if len(self.colonne) != 1 or self.colonne not in COLONNES:
+            raise ValueError(f"colonne invalide : {self.colonne!r}")
+        if not 1 <= self.ligne <= TAILLE:
+            raise ValueError(f"ligne invalide : {self.ligne!r}")
 
     @classmethod
     def depuis_nom(cls, nom: str) -> "Case":
         """Case.depuis_nom("c3") donne Case('c', 3) ; un nom mal formé lève ValueError."""
-        raise NotImplementedError("à compléter")
+        try:
+            return cls(nom[0], int(nom[1:]))
+        except (ValueError, IndexError):
+            raise ValueError(f"nom de case invalide : {nom!r}") from None
 
     @property
     def est_noire(self) -> bool:
         """On ne joue que sur les cases noires ; a1 est noire."""
-        raise NotImplementedError("à compléter")
+        return (COLONNES.index(self.colonne) + self.ligne) % 2 == 1
 
     def decaler(self, dc: int, dl: int) -> "Case | None":
         """La case située dc colonnes et dl lignes plus loin, ou None si on sort du plateau."""
-        raise NotImplementedError("à compléter")
+        indice = COLONNES.index(self.colonne) + dc
+        ligne = self.ligne + dl
+        if not (0 <= indice < TAILLE and 1 <= ligne <= TAILLE):
+            return None
+        return Case(COLONNES[indice], ligne)
 
     def __str__(self) -> str:
-        raise NotImplementedError("à compléter")
+        return f"{self.colonne}{self.ligne}"
 
 
 def en_case(valeur: "Case | str") -> Case:
@@ -70,26 +80,28 @@ class Piece(ABC):
 
     def __init__(self, couleur: str):
         """Refuse une couleur autre que "blanc" ou "noir" (ValueError)."""
-        raise NotImplementedError("à compléter")
+        if couleur not in Piece.COULEURS:
+            raise ValueError(f"couleur invalide : {couleur!r}")
+        self._couleur = couleur
 
     @property
     def couleur(self) -> str:
         """Lecture seule : pas de setter."""
-        raise NotImplementedError("à compléter")
+        return self._couleur
 
     @property
     def sens(self) -> int:
         """Le sens de la marche : +1 (vers la ligne 10) pour les blancs, -1 pour les noirs."""
-        raise NotImplementedError("à compléter")
+        return 1 if self._couleur == "blanc" else -1
 
     @property
     def symbole(self) -> str:
         """La lettre en majuscule pour les blancs, en minuscule pour les noirs."""
-        raise NotImplementedError("à compléter")
+        return self.LETTRE.upper() if self._couleur == "blanc" else self.LETTRE.lower()
 
     def est_adverse(self, autre: "Piece | None") -> bool:
         """Vrai si autre est une pièce de l'autre couleur (faux pour None)."""
-        raise NotImplementedError("à compléter")
+        return autre is not None and autre.couleur != self._couleur
 
     @abstractmethod
     def deplacements(self, case: Case, plateau: "Plateau") -> set[Case]:
@@ -104,10 +116,13 @@ class Piece(ABC):
         return self
 
     def __repr__(self) -> str:
-        raise NotImplementedError("à compléter")
+        return f"{type(self).__name__}({self._couleur!r})"
 
     def __str__(self) -> str:
-        raise NotImplementedError("à compléter")
+        couleur = self._couleur
+        if self.FEMININ:
+            couleur = "blanche" if couleur == "blanc" else "noire"
+        return f"{self.NOM} {couleur}"
 
 
 # --- Étape 3 : le plateau ------------------------------------------------------------------------
@@ -131,23 +146,40 @@ class Plateau:
     @classmethod
     def position_initiale(cls) -> "Plateau":
         """Un pion sur chaque case noire : blancs en lignes 1 à 4, noirs en lignes 7 à 10."""
-        raise NotImplementedError("à compléter")
+        plateau = cls()
+        for ligne in range(1, TAILLE + 1):
+            if ligne <= 4:
+                couleur = "blanc"
+            elif ligne >= 7:
+                couleur = "noir"
+            else:
+                continue                      # lignes 5 et 6 : vides
+            for colonne in COLONNES:
+                case = Case(colonne, ligne)
+                if case.est_noire:
+                    plateau.placer(case, Pion(couleur))
+        return plateau
 
     def placer(self, case: "Case | str", piece: Piece) -> None:
         """Pose une pièce. ValueError si la case est blanche ou déjà occupée."""
-        raise NotImplementedError("à compléter")
+        case = en_case(case)
+        if not case.est_noire:
+            raise ValueError(f"{case} est une case blanche")
+        if case in self._pieces:
+            raise ValueError(f"{case} est déjà occupée")
+        self._pieces[case] = piece
 
     def __getitem__(self, case: "Case | str") -> "Piece | None":
         """plateau["c3"] : la pièce sur la case, ou None si elle est vide."""
-        raise NotImplementedError("à compléter")
+        return self._pieces.get(en_case(case))
 
     def __contains__(self, case: "Case | str") -> bool:
         """"c3" in plateau : vrai si la case est occupée."""
-        raise NotImplementedError("à compléter")
+        return en_case(case) in self._pieces
 
     def __len__(self) -> int:
         """Le nombre de pièces sur le plateau."""
-        raise NotImplementedError("à compléter")
+        return len(self._pieces)
 
     def __iter__(self):
         """Parcourt les cases occupées, ligne par ligne, de gauche à droite."""
@@ -160,20 +192,52 @@ class Plateau:
     def prises_possibles(self, couleur: str) -> dict[Case, dict[Case, Case]]:
         """Toutes les prises d'un joueur : {départ: {arrivée: pièce prise}}, seulement pour les
         pièces qui peuvent prendre."""
-        raise NotImplementedError("à compléter")
+        resultat = {}
+        for case in self:
+            piece = self[case]
+            if piece.couleur == couleur:
+                prises = piece.prises(case, self)
+                if prises:
+                    resultat[case] = prises
+        return resultat
 
     def coups_possibles(self, couleur: str) -> list[tuple[Case, Case]]:
         """Les coups autorisés, triés. S'il existe des prises, seules les prises comptent."""
-        raise NotImplementedError("à compléter")
+        prises = self.prises_possibles(couleur)
+        if prises:
+            coups = [(depart, arrivee)
+                     for depart, arrivees in prises.items() for arrivee in arrivees]
+        else:
+            coups = [(case, arrivee)
+                     for case in self if self[case].couleur == couleur
+                     for arrivee in self[case].deplacements(case, self)]
+        return sorted(coups, key=lambda coup: (ordre(coup[0]), ordre(coup[1])))
 
     def deplacer(self, depart: "Case | str", arrivee: "Case | str") -> "Piece | None":
         """Joue un coup, renvoie la pièce prise ou None. Vérifier d'abord, modifier ensuite."""
-        raise NotImplementedError("à compléter")
+        depart, arrivee = en_case(depart), en_case(arrivee)
+        piece = self[depart]
+        # 1. Vérifier d'abord : rien ne bouge tant qu'une règle est violée.
+        if piece is None:
+            raise CoupInvalideError(depart, arrivee, "aucune pièce sur la case de départ")
+        prise = None
+        if self.prises_possibles(piece.couleur):
+            prises = piece.prises(depart, self)
+            if arrivee not in prises:
+                raise CoupInvalideError(depart, arrivee, "la prise est obligatoire")
+            prise = prises[arrivee]
+        elif arrivee not in piece.deplacements(depart, self):
+            raise CoupInvalideError(depart, arrivee, "déplacement interdit")
+        # 2. Modifier ensuite.
+        del self._pieces[depart]
+        piece_prise = self._pieces.pop(prise) if prise is not None else None
+        self._pieces[arrivee] = piece.promouvoir(arrivee)
+        return piece_prise
 
     # --- Étape 8
     def vers_dict(self) -> dict[str, str]:
         """L'inverse de depuis_dict : {"c3": "P", "f6": "d", ...}, dans l'ordre du plateau."""
-        raise NotImplementedError("à compléter")
+        return {str(case): self[case].symbole for case in self}
 
     # --- Affichage (fourni)
     def __repr__(self) -> str:
@@ -199,20 +263,63 @@ class Pion(Piece):
 
     def deplacements(self, case, plateau):
         """Une case en diagonale, vers l'avant, si elle est libre."""
-        raise NotImplementedError("à compléter")
+        cases = set()
+        for dc in (-1, 1):
+            voisine = case.decaler(dc, self.sens)
+            if voisine is not None and plateau[voisine] is None:
+                cases.add(voisine)
+        return cases
 
     def prises(self, case, plateau):
         """Sauter une pièce adverse voisine (avant ou arrière) vers la case libre derrière."""
-        raise NotImplementedError("à compléter")
+        resultat = {}
+        for dc, dl in DIAGONALES:
+            milieu = case.decaler(dc, dl)
+            arrivee = case.decaler(2 * dc, 2 * dl)
+            if arrivee is not None and plateau[arrivee] is None \
+                    and self.est_adverse(plateau[milieu]):
+                resultat[arrivee] = milieu
+        return resultat
 
     # --- Étape 6
     def promouvoir(self, case):
         """Sur la dernière ligne (10 pour les blancs, 1 pour les noirs), le pion devient dame."""
-        raise NotImplementedError("à compléter")
+        derniere = TAILLE if self.couleur == "blanc" else 1
+        return Dame(self.couleur) if case.ligne == derniere else self
 
 
 # --- Étape 5 : la dame ---------------------------------------------------------------------------
-# À vous : écrivez ici la classe Dame (énoncé, étape 5).
+class Dame(Piece):
+    LETTRE = "D"
+    NOM = "dame"
+    FEMININ = True
+
+    def deplacements(self, case, plateau):
+        """Autant de cases libres qu'elle veut, dans les quatre diagonales."""
+        cases = set()
+        for dc, dl in DIAGONALES:
+            suivante = case.decaler(dc, dl)
+            while suivante is not None and plateau[suivante] is None:
+                cases.add(suivante)
+                suivante = suivante.decaler(dc, dl)
+        return cases
+
+    def prises(self, case, plateau):
+        """Prise à distance : des cases libres, une pièce adverse, puis n'importe quelle case
+        libre derrière elle (jusqu'au prochain obstacle ou au bord)."""
+        resultat = {}
+        for dc, dl in DIAGONALES:
+            suivante = case.decaler(dc, dl)
+            while suivante is not None and plateau[suivante] is None:   # cases libres
+                suivante = suivante.decaler(dc, dl)
+            if suivante is None or not self.est_adverse(plateau[suivante]):
+                continue                                                 # bord ou pièce amie
+            prise = suivante
+            suivante = prise.decaler(dc, dl)
+            while suivante is not None and plateau[suivante] is None:   # arrivées possibles
+                resultat[suivante] = prise
+                suivante = suivante.decaler(dc, dl)
+        return resultat
 
 
 # --- Étape 7 : la partie -------------------------------------------------------------------------
@@ -227,7 +334,8 @@ class Coup:
 
     def __str__(self) -> str:
         """Notation des dames : "1. c3-d4" pour un déplacement, "4. d4xf6" pour une prise."""
-        raise NotImplementedError("à compléter")
+        separateur = "x" if self.prise else "-"
+        return f"{self.numero}. {self.depart}{separateur}{self.arrivee}"
 
 
 class Partie:
@@ -240,19 +348,36 @@ class Partie:
 
     def jouer(self, depart: str, arrivee: str) -> Coup:
         """Vérifie le trait, joue, note le coup, passe la main à l'adversaire."""
-        raise NotImplementedError("à compléter")
+        piece = self.plateau[depart]
+        if piece is not None and piece.couleur != self.trait:
+            joueur = "blancs" if self.trait == "blanc" else "noirs"
+            raise CoupInvalideError(depart, arrivee, f"c'est aux {joueur} de jouer")
+        prise = self.plateau.deplacer(depart, arrivee)
+        coup = Coup(len(self.historique) + 1, self.trait,
+                    str(en_case(depart)), str(en_case(arrivee)), prise is not None)
+        self.historique.append(coup)
+        self.trait = adversaire(self.trait)
+        return coup
 
     @property
     def gagnant(self) -> "str | None":
         """Celui qui a le trait et ne peut plus jouer a perdu : la couleur gagnante, ou None."""
-        raise NotImplementedError("à compléter")
+        if self.plateau.coups_possibles(self.trait):
+            return None
+        return adversaire(self.trait)
 
     # --- Étape 8
     def sauvegarder(self, chemin) -> None:
         """Écrit la partie en JSON : {"trait": ..., "pieces": {"c3": "P", ...}}."""
-        raise NotImplementedError("à compléter")
+        donnees = {"trait": self.trait, "pieces": self.plateau.vers_dict()}
+        with open(chemin, "w", encoding="utf-8") as fichier:
+            json.dump(donnees, fichier, ensure_ascii=False, indent=2)
 
     @classmethod
     def charger(cls, chemin) -> "Partie":
         """Constructeur alternatif : recrée une partie écrite par sauvegarder."""
-        raise NotImplementedError("à compléter")
+        with open(chemin, encoding="utf-8") as fichier:
+            donnees = json.load(fichier)
+        partie = cls(Plateau.depuis_dict(donnees["pieces"]))
+        partie.trait = donnees["trait"]
+        return partie
